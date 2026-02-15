@@ -263,37 +263,40 @@ export default function Bookmarks() {
 
             {bookmarks.map((b) => (
 
+
               <div
                 key={b.id}
-                className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl aspect-square p-5 shadow-sm flex flex-col group transition-all duration-200 hover:scale-105 hover:shadow-2xl hover:border-indigo-500 cursor-pointer"
+                className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl aspect-square p-5 shadow-sm flex flex-col group transition-all duration-200 hover:scale-105 hover:shadow-2xl hover:border-indigo-500 cursor-pointer relative"
                 tabIndex={0}
+                onClick={e => {
+                  // Prevent click if delete button is pressed
+                  if ((e.target as HTMLElement).closest('button')) return;
+                  window.open(b.url, '_blank', 'noopener');
+                }}
+                role="link"
+                aria-label={`Open ${b.title}`}
               >
-
                 <div className="flex flex-col items-center mb-4 transition-colors duration-200 group-hover:text-indigo-600 h-full">
                   <div className="relative w-full flex-1 aspect-square mb-2">
                     <WebsitePreviewWithLogo url={b.url} />
                   </div>
-                  <a
-                    href={b.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <span
                     className="font-semibold truncate transition-colors duration-200 group-hover:text-indigo-600 w-full text-center"
                   >
                     {b.title}
-                  </a>
+                  </span>
                 </div>
-
-
                 <button
-                  onClick={() => deleteBookmark(b.id)}
+                  onClick={e => {
+                    e.stopPropagation();
+                    deleteBookmark(b.id);
+                  }}
                   disabled={deletingId === b.id}
                   className="mt-auto text-red-500 hover:text-white hover:bg-red-500 text-sm flex items-center gap-2 rounded px-2 py-1 transition-colors duration-200 opacity-80 group-hover:opacity-100"
                 >
                   <TrashIcon className="w-4 h-4"/>
                   Delete
                 </button>
-
-
               </div>
 
             ))}
