@@ -1,46 +1,65 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   CheckCircleIcon,
   TrashIcon,
   LinkIcon,
   EnvelopeIcon,
 } from "@heroicons/react/24/outline";
+
 import { supabase } from "@/utils/supabaseClient";
+
 import type { User } from "@supabase/supabase-js";
 
-function FaviconOrIcon({ url }: { url: string }) {
-  const [error, setError] = useState(false);
 
+
+
+
+function WebsitePreviewWithLogo({ url }: { url: string }) {
+  const [error, setError] = useState(false);
+  let domain: string | undefined;
   if (url.startsWith("mailto:")) {
     return (
-      <EnvelopeIcon className="w-5 h-5 text-blue-500 dark:text-blue-400 mr-2" />
+      <div className="relative w-full h-full flex items-center justify-center bg-zinc-50 dark:bg-zinc-800">
+        <EnvelopeIcon className="w-8 h-8 text-blue-500" />
+      </div>
     );
   }
-
-  let domain = "";
-
   try {
     domain = new URL(url).hostname;
   } catch {}
-
-  if (!error && domain) {
-    return (
-      <img
-        src={`https://www.google.com/s2/favicons?domain=${domain}`}
-        alt="favicon"
-        className="w-5 h-5 mr-2 rounded"
-        style={{ background: "white" }}
-        onError={() => setError(true)}
-      />
-    );
-  }
-
   return (
-    <LinkIcon className="w-5 h-5 text-blue-500 dark:text-blue-400 mr-2" />
+    <div className="relative w-full h-full flex-1">
+      {url.startsWith("http") && !error ? (
+        <iframe
+          src={url}
+          title="Website preview"
+          className="absolute inset-0 w-full h-full rounded-xl border bg-white"
+          sandbox="allow-scripts allow-same-origin allow-popups"
+          loading="lazy"
+          onError={() => setError(true)}
+        />
+      ) : (
+        <div className="absolute inset-0 flex items-center justify-center bg-zinc-50 dark:bg-zinc-800" />
+      )}
+      {/* Logo overlay */}
+      <div className="absolute top-2 left-2 bg-white/80 dark:bg-zinc-900/80 rounded-full p-1 shadow">
+        {domain ? (
+          <img
+            src={`https://www.google.com/s2/favicons?domain=${domain}`}
+            alt="favicon"
+            className="w-6 h-6 rounded"
+            onError={() => setError(true)}
+          />
+        ) : (
+          <LinkIcon className="w-6 h-6 text-indigo-500" />
+        )}
+      </div>
+    </div>
   );
 }
+
 
 interface Bookmark {
   id: string;
@@ -52,66 +71,50 @@ interface Bookmark {
 export default function Bookmarks() {
   const [user, setUser] = useState<User | null>(null);
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
-  const [url, setUrl] = useState("");
-  const [title, setTitle] = useState("");
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [bookmarkUrl, setBookmarkUrl] = useState("");
+  const [title, setTitle] = useState("");
   const [adding, setAdding] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setUser(data.user);
-    });
-  }, []);
-
-  const loadBookmarks = async () => {
+  const loadBookmarks = React.useCallback(async () => {
     if (!user) return;
-
     setLoading(true);
-    setError(null);
-
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from("bookmarks")
-      .select("id, url, title, created_at")
+      .select("*")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
-
-    if (error) setError("Failed to load bookmarks.");
-    else setBookmarks(data as Bookmark[]);
-
+    setBookmarks(data ?? []);
     setLoading(false);
-  };
+  }, [user]);
+
+  useEffect(() => {
+    const getUser = async () => {
+      const { data } = await supabase.auth.getUser();
+      setUser(data.user ?? null);
+    };
+    getUser();
+  }, []);
+
+
+
+
+
+  // Load bookmarks on initial user login
+  useEffect(() => {
+    if (user) {
+      loadBookmarks();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
-
-    let isMounted = true;
-
-    const loadRealtime = async () => {
-      setLoading(true);
-      setError(null);
-
-      const { data, error } = await supabase
-        .from("bookmarks")
-        .select("id, url, title, created_at")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
-
-      if (isMounted) {
-        if (error) setError("Failed to load bookmarks.");
-        else setBookmarks(data as Bookmark[]);
-        setLoading(false);
-      }
-    };
-
-    loadRealtime();
-
     const channel = supabase
-      .channel("realtime:bookmarks")
+      .channel("bookmarks-realtime")
       .on(
         "postgres_changes",
         {
@@ -120,168 +123,190 @@ export default function Bookmarks() {
           table: "bookmarks",
           filter: `user_id=eq.${user.id}`,
         },
-        () => {
-          if (isMounted) loadRealtime();
-        }
+        loadBookmarks
       )
       .subscribe();
-
     return () => {
-      isMounted = false;
       supabase.removeChannel(channel);
     };
-  }, [user]);
+  }, [user, loadBookmarks]);
 
-  const addBookmark = async (e: React.FormEvent) => {
+
+
+
+
+  async function addBookmark(e: React.FormEvent) {
     e.preventDefault();
-
-    if (!url || !title || !user) return;
-
+    if (!bookmarkUrl || !title || !user) return;
     setAdding(true);
-    setError(null);
-
-    const { error } = await supabase
-      .from("bookmarks")
-      .insert({ url, title, user_id: user.id });
-
-    if (error) setError("Failed to add bookmark.");
-    else {
-      setUrl("");
-      setTitle("");
-      inputRef.current?.focus();
-      await loadBookmarks();
-
-      setToast("Bookmark added!");
-      setTimeout(() => setToast(null), 2000);
-    }
-
+    // Optimistically add to UI
+    const tempId = `temp-${Date.now()}`;
+    const optimisticBookmark = {
+      id: tempId,
+      url: bookmarkUrl,
+      title,
+      created_at: new Date().toISOString(),
+    };
+    setBookmarks((prev) => [optimisticBookmark, ...prev]);
+    await supabase.from("bookmarks").insert({
+      url: bookmarkUrl,
+      title,
+      user_id: user.id,
+    });
+    setBookmarkUrl("");
+    setTitle("");
+    inputRef.current?.focus();
+    setToast("Bookmark added");
+    setTimeout(() => setToast(null), 2000);
     setAdding(false);
-  };
+  }
 
-  const deleteBookmark = async (id: string) => {
+
+
+  async function deleteBookmark(id: string) {
     setDeletingId(id);
-    setError(null);
-
-    const { error } = await supabase
+    // Optimistically remove from UI
+    setBookmarks((prev) => prev.filter((b) => b.id !== id));
+    await supabase
       .from("bookmarks")
       .delete()
       .eq("id", id);
-
-    if (error) setError("Failed to delete bookmark.");
-    else {
-      await loadBookmarks();
-
-      setToast("Bookmark deleted!");
-      setTimeout(() => setToast(null), 2000);
-    }
-
+    setToast("Bookmark deleted");
+    setTimeout(() => setToast(null), 2000);
     setDeletingId(null);
-  };
+  }
+
 
   if (!user)
     return (
-      <p className="text-center text-lg text-gray-500">
-        Sign in to manage your bookmarks.
-      </p>
+      <div className="text-center py-20 text-zinc-400">
+        Sign in to manage your bookmarks
+      </div>
     );
 
+
   return (
-    <div className="space-y-8 w-full px-0">
+
+    <div className="w-full px-6 py-10">
+
+
+      {/* Toast */}
 
       {toast && (
-        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 bg-green-600 text-white px-6 py-2 rounded shadow-lg">
-          <CheckCircleIcon className="inline w-5 h-5 mr-2" />
+
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 bg-black text-white px-6 py-3 rounded-xl shadow-lg flex gap-2 z-50">
+
+          <CheckCircleIcon className="w-5 h-5 text-green-400"/>
+
           {toast}
+
         </div>
+
       )}
 
-      {/* Form */}
+
+      {/* FORM */}
+
       <form
         onSubmit={addBookmark}
-        className="flex flex-col sm:flex-row gap-3 items-center bg-gray-50 dark:bg-zinc-900 p-4 rounded-xl shadow-lg border border-gray-200 dark:border-zinc-700 max-w-xl mx-auto"
+        className="w-full flex flex-col lg:flex-row gap-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 shadow-sm"
       >
+
+
         <input
           ref={inputRef}
           type="url"
           placeholder="Bookmark URL"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          className="flex-1 border rounded px-3 py-2"
+          value={bookmarkUrl}
+          onChange={(e) => setBookmarkUrl(e.target.value)}
           required
+          className="flex-1 px-4 py-3 border rounded-lg bg-zinc-50 dark:bg-zinc-800 focus:ring-2 focus:ring-indigo-500 outline-none"
         />
+
 
         <input
           type="text"
           placeholder="Title"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          className="flex-1 border rounded px-3 py-2"
           required
+          className="flex-1 px-4 py-3 border rounded-lg bg-zinc-50 dark:bg-zinc-800 focus:ring-2 focus:ring-indigo-500 outline-none"
         />
+
 
         <button
           type="submit"
           disabled={adding}
-          className="bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2"
+          className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-3 rounded-lg font-semibold"
         >
-          <LinkIcon className="w-5 h-5" />
           {adding ? "Adding..." : "Add"}
         </button>
+
+
       </form>
 
-      {error && <div className="text-red-600 text-center">{error}</div>}
 
-      {/* FULL WIDTH BOOKMARKS SECTION */}
-      <div className="w-screen relative left-1/2 -translate-x-1/2 bg-white dark:bg-zinc-800 rounded-xl shadow-lg border border-gray-200 dark:border-zinc-700 p-6">
+      {/* BOOKMARK GRID */}
 
-        <h2 className="text-xl font-semibold mb-4 border-b pb-2">
-          Your Bookmarks
-        </h2>
+      <div className="mt-10">
+
 
         {loading ? (
-          <div className="text-center text-gray-500">
+
+          <div className="text-center text-zinc-400">
             Loading bookmarks...
           </div>
-        ) : bookmarks.length === 0 ? (
-          <div className="text-center text-gray-400">
-            No bookmarks yet.
-          </div>
+
         ) : (
-          <div className="columns-1 sm:columns-2 md:columns-3 lg:columns-4 gap-6">
+
+          <div className="grid sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-6">
 
             {bookmarks.map((b) => (
+
               <div
                 key={b.id}
+                className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl aspect-square p-5 shadow-sm flex flex-col group transition-all duration-200 hover:scale-105 hover:shadow-2xl hover:border-indigo-500 cursor-pointer"
                 tabIndex={0}
-                className="break-inside-avoid mb-8 rounded-3xl bg-white dark:bg-zinc-900 shadow-xl border p-8 flex flex-col min-h-[200px] transition-transform duration-200 ease-in-out transform hover:scale-105 hover:shadow-2xl focus:scale-105 focus:shadow-2xl cursor-pointer outline-none"
-                style={{ willChange: 'transform' }}
               >
-                <div className="flex items-center gap-4 mb-6">
-                  <FaviconOrIcon url={b.url} />
 
+                <div className="flex flex-col items-center mb-4 transition-colors duration-200 group-hover:text-indigo-600 h-full">
+                  <div className="relative w-full flex-1 aspect-square mb-2">
+                    <WebsitePreviewWithLogo url={b.url} />
+                  </div>
                   <a
                     href={b.url}
                     target="_blank"
-                    className="text-xl font-bold truncate flex-1"
+                    rel="noopener noreferrer"
+                    className="font-semibold truncate transition-colors duration-200 group-hover:text-indigo-600 w-full text-center"
                   >
                     {b.title}
                   </a>
                 </div>
 
+
                 <button
                   onClick={() => deleteBookmark(b.id)}
-                  className="text-red-500 flex items-center gap-2 mt-auto"
+                  disabled={deletingId === b.id}
+                  className="mt-auto text-red-500 hover:text-white hover:bg-red-500 text-sm flex items-center gap-2 rounded px-2 py-1 transition-colors duration-200 opacity-80 group-hover:opacity-100"
                 >
-                  <TrashIcon className="w-5 h-5" />
+                  <TrashIcon className="w-4 h-4"/>
                   Delete
                 </button>
+
+
               </div>
+
             ))}
 
           </div>
+
         )}
+
       </div>
 
+
     </div>
+
   );
+
 }

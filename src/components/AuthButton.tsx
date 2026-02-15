@@ -87,22 +87,12 @@ export default function AuthButton() {
     return (
       <button
         onClick={signInWithGoogle}
-        className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+        className="px-8 py-4 text-lg bg-blue-600 text-white rounded-xl font-bold shadow-lg hover:bg-blue-700 transition-all duration-200"
       >
         Sign in with Google
       </button>
     );
   }
-
-  // Alphabet avatar based on name/email
-  const email = user.email || "";
-  const name = user?.user_metadata?.name || "";
-  const avatarLetter = name ? name[0].toUpperCase() : (email ? email[0].toUpperCase() : "?");
-
-  // Avatar dropdown with sign out
-  return (
-    <div className="flex items-center gap-6">
-      <AvatarDropdown avatarLetter={avatarLetter} email={email} onSignOut={signOut} />
-    </div>
-  );
+  // If signed in, render nothing (for center hero usage)
+  return null;
 }
