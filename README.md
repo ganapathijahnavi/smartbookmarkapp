@@ -17,7 +17,7 @@ A simple, modern bookmark manager built with Next.js (App Router), Supabase, and
 
 ## Live Demo
 
-- **Vercel URL:** [Webiste](https://mysmartbookmarkapp.vercel.app/)
+- **Vercel URL:** [Click here](https://mysmartbookmarkapp.vercel.app/)
 - **GitHub Repo:** [SmartBookmarkApp](https://github.com/ganapathijahnavi/SmartBookmarkApp)
 
 ---
